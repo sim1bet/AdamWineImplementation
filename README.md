@@ -10,5 +10,5 @@ This program extrapolates data from the Wine Dataset (link below)
 http://archive.ics.uci.edu/ml/datasets/Wine+Quality
 and tries to predict the quality of the wine from a finite number of parameters
 Up to now (26-02-2018),the program is not complete, as it is flawed by a serious Traceback
-which I am not able to resolve
+which I am not able to resolve  - See Issue thread
 ---> If you have suggestions on the cause, please notify me
