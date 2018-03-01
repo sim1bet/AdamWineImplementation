@@ -1,7 +1,9 @@
 # AdamWineImplementation
-Basic Numpy Implementation of Adam algorithm on Wine Dataset
+Basic Numpy Implementation of Adam algorithm on Wine Dataset.
+
 Hello everyone, 
-since I am new to ML and AI, I've decided to share the results of my effort which, systematically,
+
+since I am new to ML and AI, I've decided to share the results of my effort that, systematically,
 grow with respect to complexity and completeness. For now, I am trying to avoid the use of frameworks in order to 
 learn the basic algorithms underlying "intelligent" programs. Feel free to add constructive critiques
 
