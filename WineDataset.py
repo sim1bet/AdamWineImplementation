@@ -11,6 +11,9 @@ import math
 def create_datasets():
     dataset = np.genfromtxt('winequality-white.csv', delimiter=';')
     dataset = np.float32(dataset[1:,:])
+    l = dataset.shape[0]
+    perm = list(np.random.permutation(l))
+    dataset = dataset[perm, :]
     X_Test=dataset[:64,:-1].T
     X_Train=dataset[64:,:-1].T
     m = X_Train.shape[1]

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from WineDataset import shuffling
 
 def to_one_hot(Y):
-    nb_cl=np.max(Y)+2
+    nb_cl=11
     targets = Y.reshape(-1)
     Y = np.eye(nb_cl)[targets]
     Y=Y.T
@@ -40,19 +40,21 @@ def lay_size(X_Train, Y_Train, layers):
         lay_size.append(units)
     units=Y_Train.shape[0]
     lay_size.append(units)
+    lay_adam=np.copy(lay_size)
     
-    return lay_size
+    return lay_size, lay_adam
 
 def initialize_parameters(lay_size):
-    parameters={}                       #Creates a dictionary containing weights W and biases b
+    parameters={}
+    #Creates a dictionary containing weights W and biases b
     L=len(lay_size)
-    for l in range(1,L):
+    for l in range(L-1):
         #He initialization for parameters Ws
-        parameters["W"+str(l)]=np.random.randn(lay_size[l], lay_size[l-1])*(2/lay_size[l-1])
-        parameters["b"+str(l)]=np.zeros((lay_size[l],1))
+        parameters["W"+str(l+1)]=np.random.randn(lay_size[l+1], lay_size[l])*(2/lay_size[l])
+        parameters["b"+str(l+1)]=np.zeros((lay_size[l+1],1))
         
-        assert(parameters["W"+str(l)].shape==(lay_size[l], lay_size[l-1]))
-        assert(parameters["b"+str(l)].shape==((lay_size[l],1)))
+        assert(parameters["W"+str(l+1)].shape==(lay_size[l+1], lay_size[l]))
+        assert(parameters["b"+str(l+1)].shape==((lay_size[l+1],1)))
     
     return parameters
 
@@ -70,13 +72,13 @@ def linear_act(Z):
     #Computes non-linear activation for each layer l of units
     #--> ReLu function : {A=0 if Z<=0
     #                     A=Z if Z>0}
-    A_rl=np.maximum(0, Z)
+    A_tan=np.tanh(Z)
     activation_cache=Z
     #Cache storing linear activation of layer l (for backprop)
     
-    assert(A_rl.shape==Z.shape)
+    assert(A_tan.shape==Z.shape)
     
-    return A_rl, activation_cache
+    return A_tan, activation_cache
 
 def linear_softmax(Z):
     #Computes the softmax activation for vector A
@@ -127,8 +129,8 @@ def L_lay_forw(X, parameters):
 
 def compute_cost(AL, Y_Train):
     m=int(Y_Train.shape[1])
-    log_likelihood=-np.multiply(Y_Train,np.log(AL))
-    xent=np.sum(log_likelihood)/m
+    log_likelihood=np.multiply(np.log(np.abs(AL)),Y_Train)
+    xent=-np.sum(log_likelihood)/m
     
     cost=np.squeeze(xent)  #Ensures that there are no irrelevant dimensions casted in
     
@@ -144,13 +146,13 @@ def Soft_back(AL, Y_Train):
     
     return dZ
 
-def Relu_back(dA_prev, activation_cache):
+def tanh_back(dA_prev, activation_cache):
     #Computes gradient with respect to softmax activation
     #For all layers except the last
     Z=activation_cache
-    dZ=np.array(dA_prev, copy=True)  #Converts dZ to a correct object
+    A=np.tanh(Z)
+    dZ=dA_prev*(1-np.power(A,2))  #Converts dZ to a correct object
     #if z<=0 --> dz=0
-    dZ[Z<=0]=0
     
     assert(dZ.shape==Z.shape)
     
@@ -180,7 +182,7 @@ def linear_activation_back(Y_Train, dA_prev, cache, act):
         dZ=Soft_back(AL, Y_Train)
         dA_prev, dW, db = linear_back(dZ, linear_cache)
     elif act=="ReLu":
-        dZ=Relu_back(dA_prev, activation_cache)
+        dZ=tanh_back(dA_prev, activation_cache)
         dA_prev, dW, db = linear_back(dZ, linear_cache)
     
     return dA_prev, dW, db
@@ -193,7 +195,7 @@ def L_lay_back(Y_Train, AL, caches):
     for l in reversed(range(L)):
         if l==L-1:
             act="Softmax"
-            grads["dA3"]=AL
+            grads["dA"+str(l+1)]=AL
         elif l!=L-1:
             act="ReLu"
         dA_prev_temp, dW_temp, db_temp = linear_activation_back(Y_Train, grads["dA"+str(l+1)], caches[l], act)
@@ -203,22 +205,22 @@ def L_lay_back(Y_Train, AL, caches):
         
     return grads
 
-def initialize_Adam(parameters):
+def initialize_Adam(lay_adam):
     #Takes parameters as arguments for size
     #Initialize velocity (momentum) and exponentially weighted average of the squared gradient
-    L=len(parameters)//2
+    L=len(lay_adam)
     v={}
     s={}
     #Initialization of v and s
-    for l in range(L):
-        v["dW"+str(l+1)]=np.zeros(parameters["W"+str(l+1)].shape)
-        s["dW"+str(l+1)]=np.zeros(parameters["W"+str(l+1)].shape)
-        v["db"+str(l+1)]=np.zeros(parameters["b"+str(l+1)].shape)
-        s["db"+str(l+1)]=np.zeros(parameters["b"+str(l+1)].shape)
+    for l in range(L-1):
+        v["dW"+str(l+1)]=np.zeros((lay_adam[l+1], lay_adam[l]))
+        s["dW"+str(l+1)]=np.zeros((lay_adam[l+1], lay_adam[l]))
+        v["db"+str(l+1)]=np.zeros((lay_adam[l+1],1))
+        s["db"+str(l+1)]=np.zeros((lay_adam[l+1],1))
         
     return v, s
 
-def upd_para_adam(parameters, grads, v, s, t, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8):
+def upd_para_adam(parameters, grads, v, s, t, learning_rate, beta1=0.9, beta2=0.999, epsilon=1e-8):
     L=len(parameters)//2
     v_corrected={}
     s_corrected={}
@@ -226,28 +228,28 @@ def upd_para_adam(parameters, grads, v, s, t, learning_rate=0.001, beta1=0.9, be
     #Performance of Adam update on all parameters
     for l in range(L):
         #Moving average of the gradients with momentum
-        v["dW"+str(l+1)]=beta1*v["dW"+str(l+1)]+(1-beta1)*grads["dW"+str(l+1)]
-        v["db"+str(l+1)]=beta1*v["db"+str(l+1)]+(1-beta1)*grads["db"+str(l+1)]
+        v["dW"+str(l+1)]=np.multiply(beta1,v["dW"+str(l+1)])+np.multiply((1-beta1),grads["dW"+str(l+1)])
+        v["db"+str(l+1)]=np.multiply(beta1,v["db"+str(l+1)])+np.multiply((1-beta1),grads["db"+str(l+1)])
         
         #Coreccting biases for v values across layers
         v_corrected["dW"+str(l+1)]=v["dW"+str(l+1)]/(1-np.power(beta1, t))
         v_corrected["db"+str(l+1)]=v["db"+str(l+1)]/(1-np.power(beta1, t))
         
         #Moving averages according to square gradients
-        s["dW"+str(l+1)]=beta2*s["dW"+str(l+1)]+(1-beta2)*np.power(grads["dW"+str(l+1)],2)
-        s["db"+str(l+1)]=beta2*s["db"+str(l+1)]+(1-beta2)*np.power(grads["db"+str(l+1)],2)
+        s["dW"+str(l+1)]=np.multiply(beta2,s["dW"+str(l+1)])+np.multiply((1-beta2),np.power(grads["dW"+str(l+1)],2))
+        s["db"+str(l+1)]=np.multiply(beta2,s["db"+str(l+1)])+np.multiply((1-beta2),np.power(grads["db"+str(l+1)],2))
         
         #Correcting biases for s values across layers
         s_corrected["dW"+str(l+1)]=s["dW"+str(l+1)]/(1-np.power(beta2, t))
         s_corrected["db"+str(l+1)]=s["db"+str(l+1)]/(1-np.power(beta2, t))
         
         #Updating parameters procedure
-        parameters["W"+str(l+1)]=parameters["W"+str(l+1)]-learning_rate*(v_corrected["dW"+str(l+1)]/np.sqrt(s_corrected["dW"+str(l+1)]+epsilon))
-        parameters["b"+str(l+1)]=parameters["b"+str(l+1)]-learning_rate*(v_corrected["db"+str(l+1)]/np.sqrt(s_corrected["db"+str(l+1)]+epsilon))
+        parameters["W"+str(l+1)]=np.add(parameters["W"+str(l+1)],np.multiply((-learning_rate),(v_corrected["dW"+str(l+1)]/np.sqrt(s_corrected["dW"+str(l+1)]+epsilon))))
+        parameters["b"+str(l+1)]=np.add(parameters["b"+str(l+1)],np.multiply((-learning_rate),(v_corrected["db"+str(l+1)]/np.sqrt(s_corrected["db"+str(l+1)]+epsilon))))
         
     return parameters, v, s
 
-def AdamModel(X_Train, Y_Train, lay_size, learning_rate, minibatch_size, beta1, beta2, epsilon, n_epoch, print_cost=False):
+def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_size, beta1, beta2, epsilon, n_epoch, print_cost):
     #Implements the complete model
     #Incudes shuffling of minibatches at each epoch
     costs=[]
@@ -258,7 +260,7 @@ def AdamModel(X_Train, Y_Train, lay_size, learning_rate, minibatch_size, beta1, 
     parameters = initialize_parameters(lay_size)
     
     #Initialization of v, s for Adam
-    v, s = initialize_Adam(parameters)
+    v, s = initialize_Adam(lay_adam)
     
     #iterates the procedure for n_epoch
     for n in range(n_epoch):
@@ -272,7 +274,6 @@ def AdamModel(X_Train, Y_Train, lay_size, learning_rate, minibatch_size, beta1, 
             minibatch_X, minibatch_Y = minibatch
             
             #Forward-prop for the minibatch
-            print(len(parameters))
             AL, caches = L_lay_forw(minibatch_X, parameters)
             
             #Computes the cost associated to the output of the minibatch
@@ -283,7 +284,7 @@ def AdamModel(X_Train, Y_Train, lay_size, learning_rate, minibatch_size, beta1, 
             
             #Parameters updating procedure
             t +=1
-            parameters = upd_para_adam(parameters, grads, v, s, t, learning_rate, beta1, beta2, epsilon)
+            parameters, v, s = upd_para_adam(parameters, grads, v, s, t, learning_rate, beta1, beta2, epsilon)
             
         if print_cost and n%20==0:
             print ("Cost after epoch %i: %f" %(n, cost))
@@ -305,16 +306,19 @@ def predict(X_Test, Y_Test, parameters):
         AL, caches = L_lay_forw(X_Test, parameters)
         
         #Creation of the prediction matrix
-        predict=AL
+        predict=np.copy(AL)
         
         #Deterministic activation
         predict[np.where(AL>0.5)]=1
         predict[np.where(AL<=0.5)]=0
         
-        #Definition of accuracy in Test_ Train_output divergence
-        print("Accuracy of the model: "+str(np.mean((predict[0,:]==Y_Test[0,:]))))
-        
         return predict
+    
+def accu(Y_Test,predict):
+    accuracy=np.multiply((Y_Test),(predict))+np.multiply((1-(Y_Test)),(1-(predict)))
+    accuracy=(np.sum(accuracy)/float(Y_Test.size)*100)
+    
+    return accuracy
     
     
         
