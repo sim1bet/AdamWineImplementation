@@ -324,8 +324,7 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
 def predict(X_Test, Y_Test, parameters, epsilon):
         #Functions that predicts value for X_Test
         #Computation of final activation for X_Test
-        c=0
-        AL, caches, c = L_lay_forw(X_Test, parameters, epsilon, c)
+        AL, caches = L_lay_forw(X_Test, parameters, epsilon, c)
         
         #Creation of the prediction matrix
         predict=np.copy(AL)
