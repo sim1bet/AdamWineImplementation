@@ -93,19 +93,22 @@ def linear_softmax(Z):
     
     return A, activation_cache
 
-def linear_act_forward(A_prev, W, b, epsilon, act):
+def linear_act_forward(A_prev, W, b, epsilon, c, act):
     #Takes as argument the activation A_prev of layer l-1,
     #the connection matrix W and the bias vector b of layer l
     Z, linear_cache = linear_forward(A_prev, W, b)
     if act=="ReLu":
         A, activation_cache = linear_act(Z, epsilon)
+        #if c==0 or c==1 or c==2:
+        #    print(A)
     elif act=="Softmax":
         A, activation_cache = linear_softmax(Z)
     cache=(linear_cache, activation_cache)
+    c+=1
     
-    return A, cache
+    return A, cache, c
 
-def L_lay_forw(X, parameters, epsilon):
+def L_lay_forw(X, parameters, epsilon, c):
     #Iterates the linear_act_forward process across the entire architecture
     #stores all the "cache" in a caches list
     #Stores all the activations in a A_l list
@@ -118,7 +121,7 @@ def L_lay_forw(X, parameters, epsilon):
             act="ReLu"
         elif l==L:
             act="Softmax"
-        A, cache = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], epsilon, act)
+        A, cache, c = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], epsilon, c, act)
         caches.append(cache)
     AL= np.copy(A)
     
@@ -155,7 +158,7 @@ def Soft_back(Y_Train, dAL):
     return dZ
 
 def rl_back(activation_cache):
-    #Computes gradient with respect to softmax activation
+    #Computes gradient with respect to ReLu activation
     #For all layers except the last
     Z=activation_cache
     dZ=np.copy(Z)
@@ -267,6 +270,7 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
     costs=[]
     t=0             #Initialize the counter for Adam update +1 at each epoch
     m=X_Train.shape[1]
+    c=0
     
     #Initialization of parameters
     parameters = initialize_parameters(lay_size)
@@ -309,8 +313,8 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
             
     #synaptic pruning
     #for l in range(L-1):
-     #   parameters["W"+str(l+1)][np.where(parameters["W"+str(l+1)]<0.05)]=0
-     #   parameters["b"+str(l+1)][np.where(parameters["b"+str(l+1)]<0.05)]=0
+     #   parameters["W"+str(l+1)][np.where(parameters["W"+str(l+1)]<0.2)]=0
+     #   parameters["b"+str(l+1)][np.where(parameters["b"+str(l+1)]<0.2)]=0
         
     #Plot the graph related to the learning instance
     plt.plot(costs)
@@ -324,7 +328,7 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
 def predict(X_Test, Y_Test, parameters, epsilon):
         #Functions that predicts value for X_Test
         #Computation of final activation for X_Test
-        AL, caches = L_lay_forw(X_Test, parameters, epsilon, c)
+        AL, caches = L_lay_forw(X_Test, parameters, epsilon)
         
         #Creation of the prediction matrix
         predict=np.copy(AL)
