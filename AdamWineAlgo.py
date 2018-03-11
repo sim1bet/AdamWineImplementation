@@ -50,7 +50,7 @@ def initialize_parameters(lay_size):
     L=len(lay_size)
     for l in range(L-1):
         #He initialization for parameters Ws
-        parameters["W"+str(l+1)]=np.random.randn(lay_size[l+1], lay_size[l])*(2/lay_size[l])
+        parameters["W"+str(l+1)]=np.random.randn(lay_size[l+1], lay_size[l])*0.01#(2/lay_size[l])
         parameters["b"+str(l+1)]=np.zeros((lay_size[l+1],1))
         
         assert(parameters["W"+str(l+1)].shape==(lay_size[l+1], lay_size[l]))
@@ -68,25 +68,24 @@ def linear_forward(A, W, b):
     
     return Z, linear_cache
 
-def linear_act(Z):
+def linear_act(Z, epsilon):
     #Computes non-linear activation for each layer l of units
     #--> ReLu function : {A=0 if Z<=0
     #                     A=Z if Z>0}
-    A_tan=np.tanh(Z)
+    A_rl=np.maximum(epsilon, Z)
     activation_cache=Z
     #Cache storing linear activation of layer l (for backprop)
     
-    assert(A_tan.shape==Z.shape)
+    assert(A_rl.shape==Z.shape)
     
-    return A_tan, activation_cache
+    return A_rl, activation_cache
 
 def linear_softmax(Z):
     #Computes the softmax activation for vector A
     #Activation values within [0,1]
-    shiftA=Z-np.max(Z)
     #shiftA shifts values for A_rl closer to zero so that, once exponentiated
     #they don't explode (all negative except one value - many approximated to zero)
-    A=(np.exp(shiftA)/np.sum(np.exp(shiftA)))
+    A=np.exp(Z-np.max(Z))/np.sum(np.exp(Z-np.max(Z)), axis=0)
     activation_cache=Z
     #Cache storing ReLu activation of layer l (for backprop)
     
@@ -94,19 +93,22 @@ def linear_softmax(Z):
     
     return A, activation_cache
 
-def linear_act_forward(A_prev, W, b, act):
+def linear_act_forward(A_prev, W, b, epsilon, c, act):
     #Takes as argument the activation A_prev of layer l-1,
     #the connection matrix W and the bias vector b of layer l
     Z, linear_cache = linear_forward(A_prev, W, b)
     if act=="ReLu":
-        A, activation_cache = linear_act(Z)
+        A, activation_cache = linear_act(Z, epsilon)
+        #if c==0 or c==1 or c==2:
+        #    print(A)
     elif act=="Softmax":
         A, activation_cache = linear_softmax(Z)
     cache=(linear_cache, activation_cache)
+    c+=1
     
-    return A, cache
+    return A, cache, c
 
-def L_lay_forw(X, parameters):
+def L_lay_forw(X, parameters, epsilon, c):
     #Iterates the linear_act_forward process across the entire architecture
     #stores all the "cache" in a caches list
     #Stores all the activations in a A_l list
@@ -119,40 +121,51 @@ def L_lay_forw(X, parameters):
             act="ReLu"
         elif l==L:
             act="Softmax"
-        A, cache = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], act)
+        A, cache, c = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], epsilon, c, act)
         caches.append(cache)
     AL= np.copy(A)
     
     assert(AL.shape==X.shape)
     
-    return AL, caches
+    return AL, caches, c
 
-def compute_cost(AL, Y_Train):
-    m=int(Y_Train.shape[1])
-    log_likelihood=np.multiply(np.log(np.abs(AL)),Y_Train)
-    xent=-np.sum(log_likelihood)/m
+def L2_comp(X, parameters, lambdal2):
+    m=X.shape[1]
+    L2=0
+    L=len(parameters)//2
+    for l in range(L-1):
+        L2reg=(1/m)*(lambdal2/2)*(np.sum(np.square(parameters["W"+str(l+1)])))
+        L2+=L2reg
+        
+    return L2
+
+def compute_cost(AL, Y_Train, L2):
+    m=Y_Train.shape[1]
+    logprobs=np.multiply(np.abs(Y_Train),np.log(np.abs(AL)))+np.multiply((1-np.abs(Y_Train)),np.log(1-np.abs(AL)))
+    xent=-np.sum(logprobs)/m+L2
     
     cost=np.squeeze(xent)  #Ensures that there are no irrelevant dimensions casted in
     
     return cost
 
-def Soft_back(AL, Y_Train):
+def Soft_back(Y_Train, dAL):
     #Computes the gradient with respect to softmax activation
     #Only for the last layer
-    m=Y_Train.shape[1]
-    AL=np.multiply(AL, Y_Train)
-    AL-=1
-    dZ=AL/m
+    dZ=np.multiply(Y_Train, dAL)
+    s = dZ.sum(axis=dZ.ndim-1, keepdims=True)
+    dZ += np.multiply(Y_Train, s) 
     
     return dZ
 
-def tanh_back(dA_prev, activation_cache):
+def rl_back(activation_cache):
     #Computes gradient with respect to softmax activation
     #For all layers except the last
     Z=activation_cache
-    A=np.tanh(Z)
-    dZ=dA_prev*(1-np.power(A,2))  #Converts dZ to a correct object
-    #if z<=0 --> dz=0
+    dZ=np.copy(Z)
+    dZ[Z<=0]=0
+    dZ[Z>0]=1
+    #if Z<=0 --> dZ=0
+    #if Z>0 --> dZ=1
     
     assert(dZ.shape==Z.shape)
     
@@ -178,29 +191,31 @@ def linear_activation_back(Y_Train, dA_prev, cache, act):
     linear_cache, activation_cache = cache
     
     if act=="Softmax":
-        AL=dA_prev
-        dZ=Soft_back(AL, Y_Train)
+        dZ=Soft_back(Y_Train,dA_prev)
         dA_prev, dW, db = linear_back(dZ, linear_cache)
     elif act=="ReLu":
-        dZ=tanh_back(dA_prev, activation_cache)
+        dZ=rl_back(activation_cache)
         dA_prev, dW, db = linear_back(dZ, linear_cache)
     
     return dA_prev, dW, db
 
-def L_lay_back(Y_Train, AL, caches):
+def L_lay_back(Y_Train, AL, caches, parameters):
     #Creates a dictionary of parameters to later use them for Adam
     grads={}
     L=len(caches)
+    m=Y_Train.shape[1]
+    lambd=2.3e-3
+    dAL=AL-Y_Train
     #Through the definition of act, we implement a unique loop for the backprop
     for l in reversed(range(L)):
         if l==L-1:
             act="Softmax"
-            grads["dA"+str(l+1)]=AL
+            grads["dA"+str(l+1)]=dAL
         elif l!=L-1:
             act="ReLu"
         dA_prev_temp, dW_temp, db_temp = linear_activation_back(Y_Train, grads["dA"+str(l+1)], caches[l], act)
         grads["dA"+str(l)]=dA_prev_temp
-        grads["dW"+str(l+1)]=dW_temp
+        grads["dW"+str(l+1)]=dW_temp+(1/m)*parameters["W"+str(l+1)]*lambd
         grads["db"+str(l+1)]=db_temp
         
     return grads
@@ -255,9 +270,11 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
     costs=[]
     t=0             #Initialize the counter for Adam update +1 at each epoch
     m=X_Train.shape[1]
+    c=0
     
     #Initialization of parameters
     parameters = initialize_parameters(lay_size)
+    #L=len(lay_size)
     
     #Initialization of v, s for Adam
     v, s = initialize_Adam(lay_adam)
@@ -274,13 +291,16 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
             minibatch_X, minibatch_Y = minibatch
             
             #Forward-prop for the minibatch
-            AL, caches = L_lay_forw(minibatch_X, parameters)
+            AL, caches, c = L_lay_forw(minibatch_X, parameters, epsilon, c)
+            
+            #Computes the regularizing term L2
+            L2=L2_comp(minibatch_X, parameters, lambdal2=2.3e-3)
             
             #Computes the cost associated to the output of the minibatch
-            cost = compute_cost(AL, minibatch_Y)
+            cost = compute_cost(AL, minibatch_Y, L2)
             
             #Computation of gradients
-            grads = L_lay_back(minibatch_Y, AL, caches)
+            grads = L_lay_back(minibatch_Y, AL, caches, parameters)
             
             #Parameters updating procedure
             t +=1
@@ -290,6 +310,11 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
             print ("Cost after epoch %i: %f" %(n, cost))
         if print_cost and n%20==0:
             costs.append(cost)
+            
+    #synaptic pruning
+    #for l in range(L-1):
+     #   parameters["W"+str(l+1)][np.where(parameters["W"+str(l+1)]<0.2)]=0
+     #   parameters["b"+str(l+1)][np.where(parameters["b"+str(l+1)]<0.2)]=0
         
     #Plot the graph related to the learning instance
     plt.plot(costs)
@@ -300,23 +325,27 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
     
     return parameters
 
-def predict(X_Test, Y_Test, parameters):
+def predict(X_Test, Y_Test, parameters, epsilon):
         #Functions that predicts value for X_Test
         #Computation of final activation for X_Test
-        AL, caches = L_lay_forw(X_Test, parameters)
+        c=0
+        AL, caches, c = L_lay_forw(X_Test, parameters, epsilon, c)
         
         #Creation of the prediction matrix
         predict=np.copy(AL)
         
         #Deterministic activation
-        predict[np.where(AL>0.5)]=1
-        predict[np.where(AL<=0.5)]=0
+        predict[np.where(predict>0.15)]=1
+        predict[np.where(predict<=0.15)]=0
+        print(AL)
+        print(predict)
+        print(Y_Test)
         
         return predict
     
 def accu(Y_Test,predict):
-    accuracy=np.multiply((Y_Test),(predict))+np.multiply((1-(Y_Test)),(1-(predict)))
-    accuracy=(np.sum(accuracy)/float(Y_Test.size)*100)
+    accuracy=np.multiply((Y_Test),(predict))
+    accuracy=(np.sum(accuracy)/float(Y_Test.shape[1])*100)
     
     return accuracy
     
