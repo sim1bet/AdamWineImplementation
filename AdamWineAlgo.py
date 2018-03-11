@@ -93,22 +93,19 @@ def linear_softmax(Z):
     
     return A, activation_cache
 
-def linear_act_forward(A_prev, W, b, epsilon, c, act):
+def linear_act_forward(A_prev, W, b, epsilon, act):
     #Takes as argument the activation A_prev of layer l-1,
     #the connection matrix W and the bias vector b of layer l
     Z, linear_cache = linear_forward(A_prev, W, b)
     if act=="ReLu":
         A, activation_cache = linear_act(Z, epsilon)
-        #if c==0 or c==1 or c==2:
-        #    print(A)
     elif act=="Softmax":
         A, activation_cache = linear_softmax(Z)
     cache=(linear_cache, activation_cache)
-    c+=1
     
-    return A, cache, c
+    return A, cache
 
-def L_lay_forw(X, parameters, epsilon, c):
+def L_lay_forw(X, parameters, epsilon):
     #Iterates the linear_act_forward process across the entire architecture
     #stores all the "cache" in a caches list
     #Stores all the activations in a A_l list
@@ -121,7 +118,7 @@ def L_lay_forw(X, parameters, epsilon, c):
             act="ReLu"
         elif l==L:
             act="Softmax"
-        A, cache, c = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], epsilon, c, act)
+        A, cache = linear_act_forward(A_prev, parameters["W"+str(l)], parameters["b"+str(l)], epsilon, act)
         caches.append(cache)
     AL= np.copy(A)
     
@@ -270,7 +267,6 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
     costs=[]
     t=0             #Initialize the counter for Adam update +1 at each epoch
     m=X_Train.shape[1]
-    c=0
     
     #Initialization of parameters
     parameters = initialize_parameters(lay_size)
@@ -291,7 +287,7 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
             minibatch_X, minibatch_Y = minibatch
             
             #Forward-prop for the minibatch
-            AL, caches, c = L_lay_forw(minibatch_X, parameters, epsilon, c)
+            AL, caches = L_lay_forw(minibatch_X, parameters, epsilon)
             
             #Computes the regularizing term L2
             L2=L2_comp(minibatch_X, parameters, lambdal2=2.3e-3)
@@ -313,8 +309,8 @@ def AdamModel(X_Train, Y_Train, lay_size, lay_adam, learning_rate, minibatch_siz
             
     #synaptic pruning
     #for l in range(L-1):
-     #   parameters["W"+str(l+1)][np.where(parameters["W"+str(l+1)]<0.2)]=0
-     #   parameters["b"+str(l+1)][np.where(parameters["b"+str(l+1)]<0.2)]=0
+     #   parameters["W"+str(l+1)][np.where(parameters["W"+str(l+1)]<0.05)]=0
+     #   parameters["b"+str(l+1)][np.where(parameters["b"+str(l+1)]<0.05)]=0
         
     #Plot the graph related to the learning instance
     plt.plot(costs)
@@ -337,9 +333,6 @@ def predict(X_Test, Y_Test, parameters, epsilon):
         #Deterministic activation
         predict[np.where(predict>0.15)]=1
         predict[np.where(predict<=0.15)]=0
-        print(AL)
-        print(predict)
-        print(Y_Test)
         
         return predict
     
