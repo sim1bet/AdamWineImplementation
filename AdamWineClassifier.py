@@ -9,9 +9,7 @@ from WineDataset import create_datasets
 from AdamWineAlgo import to_one_hot, layers, lay_size, AdamModel, predict, accu
 
 X_Train, Y_Train, X_Test, Y_Test, m = create_datasets()
-print(Y_Test)
 Y_Test = to_one_hot(Y_Test)
-print(Y_Test)
 Y_Train = to_one_hot(Y_Train)
 layers = layers()
 lay_size, lay_adam = lay_size(X_Train, Y_Train, layers)
